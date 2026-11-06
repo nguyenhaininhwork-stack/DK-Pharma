@@ -3,9 +3,10 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const CFG_KEY = 'scorm-admin:config';
-  const MAX_MB = 95; // GitHub giới hạn 100 MB/file
+  const PART_MB = 90;       // GitHub giới hạn 100 MB/file → file lớn hơn được chia thành nhiều phần
+  const MAX_TOTAL_MB = 900; // GitHub Pages giới hạn toàn bộ web 1 GB
   let cfg = null;      // { owner, repo, token, branch }
-  let courses = [];    // [{ name, type: 'file'|'dir', size }]
+  let courses = [];    // [{ name, type: 'file'|'dir'|'parts', size, paths }]
   let catalog = [];    // courses.json của web đang chạy
   let pending = [];    // [{ file, name, title, error }]
   let pollTimer = null;
@@ -76,7 +77,7 @@
     const tree = deletes.map((path) => ({ path, mode: '100644', type: 'blob', sha: null }));
     for (let i = 0; i < adds.length; i++) {
       const a = adds[i];
-      onStep && onStep(`Đang tải lên ${a.file.name} (${i + 1}/${adds.length}, ${fmtSize(a.file.size)})…`);
+      onStep && onStep(`Đang tải lên ${a.label || a.path} (${i + 1}/${adds.length}, ${fmtSize(a.file.size)})…`);
       const blob = await gh(R() + '/git/blobs', {
         method: 'POST', body: JSON.stringify({ content: await readBase64(a.file), encoding: 'base64' }),
       });
@@ -152,10 +153,18 @@
   async function refreshCourses() {
     try {
       const items = await gh(R() + '/contents/courses?ref=' + encodeURIComponent(cfg.branch) + '&t=' + Date.now());
-      courses = items
-        .filter((i) => !i.name.startsWith('.') && (i.type === 'dir' || /\.zip$/i.test(i.name)))
-        .map((i) => ({ name: i.name, type: i.type, size: i.type === 'file' ? i.size : null }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }));
+      const map = {};
+      for (const i of items) {
+        if (i.name.startsWith('.')) continue;
+        const part = /^(.+\.zip)\.part\d+$/i.exec(i.name);
+        if (part && i.type === 'file') {
+          const c = map[part[1]] || (map[part[1]] = { name: part[1], type: 'parts', size: 0, paths: [] });
+          c.size += i.size; c.paths.push('courses/' + i.name);
+        } else if (i.type === 'dir' || (i.type === 'file' && /\.zip$/i.test(i.name))) {
+          map[i.name] = { name: i.name, type: i.type, size: i.type === 'file' ? i.size : null, paths: ['courses/' + i.name] };
+        }
+      }
+      courses = Object.values(map).sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }));
     } catch (e) {
       if (e.status === 404) courses = []; else throw e;
     }
@@ -205,7 +214,7 @@
     if (!confirm(`Xoá khoá học "${title}"?\n\nNgười học sẽ không mở được khoá này nữa.`)) return;
     btn.disabled = true; btn.textContent = 'Đang xoá…';
     try {
-      let paths = ['courses/' + c.name];
+      let paths = c.paths || ['courses/' + c.name];
       if (c.type === 'dir') {
         const ref = await gh(R() + '/git/ref/heads/' + encodeURIComponent(cfg.branch));
         const head = await gh(R() + '/git/commits/' + ref.object.sha);
@@ -227,7 +236,7 @@
   async function inspectZip(file) {
     const p = { file, name: file.name.replace(/[\\/]/g, '-'), title: '', error: '' };
     if (!/\.zip$/i.test(file.name)) { p.error = 'Không phải file .zip'; return p; }
-    if (file.size > MAX_MB * 1048576) { p.error = `File quá lớn (${fmtSize(file.size)}), GitHub chỉ cho tối đa ${MAX_MB} MB.`; return p; }
+    if (file.size > MAX_TOTAL_MB * 1048576) { p.error = `File quá lớn (${fmtSize(file.size)}). Tối đa ${MAX_TOTAL_MB} MB — hãy giảm dung lượng khi xuất bài giảng.`; return p; }
     try {
       const zip = await JSZip.loadAsync(file);
       const mPath = Object.keys(zip.files).filter((n) => /(^|\/)imsmanifest\.xml$/i.test(n) && !n.startsWith('__MACOSX/'))
@@ -277,7 +286,8 @@
             (exists ? '  ⚠ Trùng tên — sẽ THAY THẾ khoá học đang có' : '');
         };
         inp.oninput = upd; upd();
-        s.textContent = fmtSize(p.file.size);
+        const nParts = Math.ceil(p.file.size / (PART_MB * 1048576));
+        s.textContent = fmtSize(p.file.size) + (nParts > 1 ? ` · file lớn, sẽ tự chia thành ${nParts} phần khi tải lên` : '');
         lbl.appendChild(inp);
         box.append(s, lbl, linkPrev);
       }
@@ -300,15 +310,35 @@
     const st = $('uploadStatus');
     st.classList.remove('error');
     try {
+      const adds = [];
+      for (const p of ok) {
+        const size = PART_MB * 1048576;
+        const n = Math.ceil(p.file.size / size);
+        if (n <= 1) adds.push({ path: 'courses/' + p.name, file: p.file, label: p.name });
+        else for (let k = 0; k < n; k++) {
+          adds.push({
+            path: 'courses/' + p.name + '.part' + String(k + 1).padStart(3, '0'),
+            file: p.file.slice(k * size, (k + 1) * size),
+            label: `${p.name} — phần ${k + 1}/${n}`,
+          });
+        }
+      }
+      // Thay thế khoá trùng tên: xoá các file cũ của khoá đó (trừ file sắp ghi đè)
+      const newPaths = new Set(adds.map((a) => a.path));
+      const deletes = [];
+      for (const p of ok) {
+        const old = courses.find((c) => c.name.toLowerCase() === p.name.toLowerCase());
+        if (old && old.type !== 'dir') for (const x of old.paths || []) if (!newPaths.has(x)) deletes.push(x);
+      }
       const sha = await commit(
-        { adds: ok.map((p) => ({ path: 'courses/' + p.name, file: p.file })) },
+        { adds, deletes },
         'Thêm khoá học: ' + ok.map((p) => p.name).join(', '),
         (m) => { st.textContent = m; },
       );
       st.textContent = '✓ Đã tải lên ' + ok.length + ' khoá học. Web sẽ cập nhật sau khoảng 1–2 phút.';
       pending = []; renderPending();
       await refreshCourses().catch(() => {});
-      for (const p of ok) if (!courses.some((c) => c.name === p.name)) courses.push({ name: p.name, type: 'file', size: p.file.size });
+      for (const p of ok) if (!courses.some((c) => c.name === p.name)) courses.push({ name: p.name, type: 'file', size: p.file.size, paths: [] });
       renderCourses();
       watchDeploy(sha);
     } catch (e) {
