@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parent.parent
 SRC_COURSES = ROOT / "courses"
 OUT = ROOT / "_site"
-SITE_FILES = ["index.html", "style.css", "app.js", "scorm-api.js", "sw.js", "vendor"]
+SITE_FILES = ["index.html", "admin.html", "admin.js", "style.css", "app.js", "scorm-api.js", "sw.js", "vendor"]
 
 
 def slugify(name: str) -> str:
@@ -124,6 +124,7 @@ def main():
             continue
         catalog.append({
             "slug": slug,
+            "source": entry.name,
             "title": title or base,
             "version": version,
             "lessons": lessons,
