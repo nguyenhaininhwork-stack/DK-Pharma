@@ -139,3 +139,36 @@ a.brand { color: inherit; text-decoration: none; }
   .pkg-title, #versionBadge, #btnLog { display: none !important; }
   .actions { margin-left: auto; }
 }
+
+/* ---- Trang quản trị ---- */
+.admin { flex: 1; overflow: auto; padding: 24px 16px 48px; }
+.admin-wrap { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+.panel h2 { font-size: 17px; margin: 0 0 12px; }
+.field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.field label { font-weight: 600; font-size: 13px; }
+.field input {
+  font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--text); width: 100%;
+}
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row > .field { flex: 1; min-width: 180px; }
+.deploy { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+.deploy .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.deploy.running .dot { background: var(--warn); animation: pulse 1s infinite alternate; }
+.deploy.ok .dot { background: var(--ok); }
+.deploy.fail .dot { background: #d33; }
+@keyframes pulse { to { opacity: .3; } }
+.clist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.clist li {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+}
+.clist .info { flex: 1; min-width: 200px; }
+.clist .t { font-weight: 600; }
+.clist .s { color: var(--muted); font-size: 12px; word-break: break-all; }
+.clist input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); width: 100%; margin-top: 4px; }
+.clist .err { color: #d33; font-size: 12px; }
+.admin .drop { padding: 24px; max-width: none; }
+.muted { color: var(--muted); }
+a.btn { text-decoration: none; display: inline-block; }

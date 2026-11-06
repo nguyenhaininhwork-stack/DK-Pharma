@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Quản trị khoá học</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./">
+    <span class="logo">▶</span>
+    <span>Quản trị khoá học</span>
+  </a>
+  <div class="pkg-title"></div>
+  <div class="actions">
+    <a class="btn" href="./" target="_blank">Xem trang web ↗</a>
+    <button class="btn" id="btnLogout" hidden>Đăng xuất</button>
+  </div>
+</header>
+
+<main class="admin">
+  <div class="admin-wrap">
+
+    <!-- Kết nối lần đầu -->
+    <section class="panel" id="loginPanel" hidden>
+      <h2>Kết nối với kho lưu trữ</h2>
+      <p class="muted">Chỉ cần làm một lần trên mỗi máy. Mã truy cập được lưu trong trình duyệt này, không gửi đi đâu ngoài GitHub.</p>
+      <div class="row">
+        <div class="field">
+          <label for="inOwner">Tên tài khoản GitHub</label>
+          <input id="inOwner" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="inRepo">Tên repository</label>
+          <input id="inRepo" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+      <div class="field">
+        <label for="inToken">Mã truy cập (token)</label>
+        <input id="inToken" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+      </div>
+      <button class="btn primary" id="btnLogin">Kết nối</button>
+      <p class="hint" id="loginStatus"></p>
+    </section>
+
+    <!-- Quản lý -->
+    <div id="mainPanel" hidden>
+      <div class="deploy" id="deploy"><span class="dot"></span><span id="deployText">Đang kiểm tra trạng thái web…</span></div>
+
+      <section class="panel" style="margin-top:20px">
+        <h2>Thêm khoá học</h2>
+        <section class="drop" id="drop">
+          <div class="drop-inner">
+            <div class="drop-icon">📦</div>
+            <p>Kéo thả file <b>.zip</b> SCORM vào đây (được chọn nhiều file), hoặc</p>
+            <label class="btn primary">
+              Chọn file…
+              <input type="file" id="fileInput" accept=".zip,application/zip" multiple hidden>
+            </label>
+          </div>
+        </section>
+        <div id="pendingWrap" hidden style="margin-top:16px">
+          <ul class="clist" id="pendingList"></ul>
+          <div style="display:flex; gap:8px; margin-top:12px">
+            <button class="btn primary" id="btnUpload">Tải lên</button>
+            <button class="btn" id="btnCancel">Huỷ</button>
+          </div>
+        </div>
+        <p class="hint" id="uploadStatus"></p>
+      </section>
+
+      <section class="panel" style="margin-top:20px">
+        <h2>Khoá học hiện có <span class="muted" id="count"></span></h2>
+        <ul class="clist" id="courseList"></ul>
+      </section>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>
