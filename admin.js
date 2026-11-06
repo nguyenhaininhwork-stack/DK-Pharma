@@ -3,7 +3,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const CFG_KEY = 'scorm-admin:config';
-  const PART_MB = 90;       // GitHub giới hạn 100 MB/file → file lớn hơn được chia thành nhiều phần
+  const PART_MB = 20;       // GitHub từ chối 1 lần gửi quá lớn → file lớn được chia thành nhiều phần 20 MB
   const MAX_TOTAL_MB = 900; // GitHub Pages giới hạn toàn bộ web 1 GB
   let cfg = null;      // { owner, repo, token, branch }
   let courses = [];    // [{ name, type: 'file'|'dir'|'parts', size, paths }]
@@ -78,9 +78,20 @@
     for (let i = 0; i < adds.length; i++) {
       const a = adds[i];
       onStep && onStep(`Đang tải lên ${a.label || a.path} (${i + 1}/${adds.length}, ${fmtSize(a.file.size)})…`);
-      const blob = await gh(R() + '/git/blobs', {
-        method: 'POST', body: JSON.stringify({ content: await readBase64(a.file), encoding: 'base64' }),
-      });
+      const body = JSON.stringify({ content: await readBase64(a.file), encoding: 'base64' });
+      let blob;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          blob = await gh(R() + '/git/blobs', { method: 'POST', body });
+          break;
+        } catch (e) {
+          // lỗi mạng / máy chủ tạm thời → thử lại tối đa 4 lần
+          const retriable = !e.status || e.status >= 500 || e.status === 429;
+          if (!retriable || attempt >= 4) throw e;
+          onStep && onStep(`Mạng chập chờn, đang thử lại ${a.label || a.path} (lần ${attempt + 1})…`);
+          await new Promise((r) => setTimeout(r, 2000 * attempt));
+        }
+      }
       tree.push({ path: a.path, mode: '100644', type: 'blob', sha: blob.sha });
     }
     onStep && onStep('Đang lưu thay đổi…');
