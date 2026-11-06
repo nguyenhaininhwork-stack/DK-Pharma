@@ -93,27 +93,44 @@ def main():
         else:
             shutil.copy2(src, OUT / f)
 
+    # Gom các gói: file .zip, thư mục, hoặc file zip lớn bị chia nhỏ "<tên>.zip.part001", ".part002"...
+    sources = {}  # tên gói -> ("zip", path) | ("dir", path) | ("parts", [paths])
+    for p in (SRC_COURSES.iterdir() if SRC_COURSES.exists() else []):
+        if p.name.startswith("."):
+            continue
+        m = re.match(r"^(.+\.zip)\.part(\d+)$", p.name, re.I)
+        if m and p.is_file():
+            sources.setdefault(m.group(1), ("parts", []))[1].append(p)
+        elif p.is_file() and p.suffix.lower() == ".zip":
+            sources[p.name] = ("zip", p)
+        elif p.is_dir():
+            sources[p.name] = ("dir", p)
+
     catalog, used = [], set()
-    entries = sorted(SRC_COURSES.iterdir(), key=lambda p: p.name.lower()) if SRC_COURSES.exists() else []
-    for entry in entries:
-        if entry.name.startswith("."):
-            continue
-        is_zip = entry.is_file() and entry.suffix.lower() == ".zip"
-        if not (is_zip or entry.is_dir()):
-            continue
-        base = entry.stem if is_zip else entry.name
+    tmp_zip = ROOT / "_joined.zip"
+    for name in sorted(sources, key=str.lower):
+        kind, src = sources[name]
+        base = name[:-4] if kind != "dir" else name
         slug = slugify(base)
         while slug in used:
             slug += "-2"
         used.add(slug)
         dest = OUT / "courses" / slug
-        print(f"• {entry.name} -> courses/{slug}/")
+        print(f"• {name} -> courses/{slug}/" + (f" (ghép {len(src)} phần)" if kind == "parts" else ""))
         try:
-            if is_zip:
-                with zipfile.ZipFile(entry) as zf:
-                    safe_extract(zf, dest)
+            if kind == "parts":
+                src.sort(key=lambda p: int(re.search(r"(\d+)$", p.name).group(1)))
+                with open(tmp_zip, "wb") as out:
+                    for part in src:
+                        with open(part, "rb") as inp:
+                            shutil.copyfileobj(inp, out)
+                src = tmp_zip
+            if kind == "dir":
+                shutil.copytree(src, dest)
             else:
-                shutil.copytree(entry, dest)
+                with zipfile.ZipFile(src) as zf:
+                    safe_extract(zf, dest)
+            tmp_zip.unlink(missing_ok=True)
             manifest = find_manifest(dest)
             if not manifest:
                 raise ValueError("không có imsmanifest.xml — không phải gói SCORM")
@@ -121,10 +138,11 @@ def main():
         except Exception as e:  # noqa: BLE001
             print(f"  ! LỖI, bỏ qua gói này: {e}")
             shutil.rmtree(dest, ignore_errors=True)
+            tmp_zip.unlink(missing_ok=True)
             continue
         catalog.append({
             "slug": slug,
-            "source": entry.name,
+            "source": name,
             "title": title or base,
             "version": version,
             "lessons": lessons,
