@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Khoá học trực tuyến</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="./" id="homeLink">
+    <span class="logo">▶</span>
+    <span id="siteName">Khoá học trực tuyến</span>
+  </a>
+  <div class="pkg-title" id="pkgTitle"></div>
+  <div class="actions">
+    <span class="badge" id="versionBadge" hidden></span>
+    <button id="btnPrev" class="btn" hidden title="Bài trước">◀</button>
+    <button id="btnNext" class="btn" hidden title="Bài tiếp">▶</button>
+    <button id="btnShare" class="btn" hidden title="Sao chép đường link khoá học">🔗 Chia sẻ</button>
+    <button id="btnLog" class="btn" hidden title="Nhật ký SCORM API">Nhật ký</button>
+    <button id="btnClose" class="btn" hidden>✕ Đóng</button>
+  </div>
+</header>
+
+<main id="home" class="home">
+  <section class="catalog" id="catalogWrap">
+    <h1>Danh sách khoá học</h1>
+    <p class="hint" id="catalogStatus">Đang tải…</p>
+    <div class="grid" id="catalog"></div>
+  </section>
+
+  <details class="local" id="localWrap">
+    <summary>Xem thử một file SCORM (.zip) trên máy của bạn</summary>
+    <section class="drop" id="drop">
+      <div class="drop-inner">
+        <div class="drop-icon">📦</div>
+        <p>Kéo thả file <b>.zip</b> SCORM (1.2 hoặc 2004) vào đây, hoặc</p>
+        <label class="btn primary">
+          Chọn file…
+          <input type="file" id="fileInput" accept=".zip,application/zip" hidden>
+        </label>
+        <p class="hint">File chỉ mở trên máy bạn, không được tải lên đâu cả.</p>
+        <p class="hint" id="status"></p>
+      </div>
+    </section>
+    <section class="recent" id="recentWrap" hidden>
+      <h2>File đã mở gần đây</h2>
+      <ul id="recentList"></ul>
+    </section>
+  </details>
+</main>
+
+<div id="player" class="player" hidden>
+  <aside class="toc" id="toc"></aside>
+  <section class="stage">
+    <iframe id="frame" title="Nội dung khoá học" allow="fullscreen; autoplay"></iframe>
+  </section>
+  <aside class="log" id="logPanel" hidden>
+    <div class="log-head">
+      <b>SCORM API</b>
+      <button class="btn small" id="btnClearLog">Xoá</button>
+    </div>
+    <div class="cmi" id="cmiSummary"></div>
+    <pre id="log"></pre>
+  </aside>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/jszip.min.js"></script>
+<script src="scorm-api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
