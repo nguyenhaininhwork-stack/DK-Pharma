@@ -8,6 +8,8 @@
   let cfg = null;      // { owner, repo, token, branch }
   let courses = [];    // [{ name, type: 'file'|'dir'|'parts', size, paths }]
   let catalog = [];    // courses.json của web đang chạy
+  let titles = {};     // courses/_titles.json: { "<tên file>.zip": "Tên khoá học hiển thị" }
+  const TITLES_PATH = 'courses/_titles.json';
   let pending = [];    // [{ file, name, title, error }]
   let pollTimer = null;
 
@@ -176,8 +178,45 @@
         }
       }
       courses = Object.values(map).sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }));
+      titles = {};
+      if (items.some((i) => i.name === '_titles.json')) {
+        const f = await gh(R() + '/contents/' + encPath(TITLES_PATH) + '?ref=' + encodeURIComponent(cfg.branch) + '&t=' + Date.now());
+        const bytes = Uint8Array.from(atob((f.content || '').replace(/\s/g, '')), (ch) => ch.charCodeAt(0));
+        try { titles = JSON.parse(new TextDecoder().decode(bytes)) || {}; } catch (_) { titles = {}; }
+      }
     } catch (e) {
-      if (e.status === 404) courses = []; else throw e;
+      if (e.status === 404) { courses = []; titles = {}; } else throw e;
+    }
+  }
+
+  // Tên hiển thị: tên tự đặt > tên trong imsmanifest.xml > tên file
+  function courseTitle(name) {
+    const info = catalog.find((x) => x.source === name);
+    return titles[name] || (info && info.title) || stem(name);
+  }
+  // Thay đổi đưa file _titles.json vào commit
+  function titlesAdd(next) {
+    const blob = new Blob([JSON.stringify(next, null, 2) + '\n'], { type: 'application/json' });
+    return { path: TITLES_PATH, file: blob, label: 'danh sách tên khoá học' };
+  }
+
+  async function renameCourse(c, btn) {
+    const cur = courseTitle(c.name);
+    const v = prompt('Tên khoá học mới (đường link giữ nguyên, không bị ảnh hưởng):', cur);
+    if (v == null) return;
+    const name = v.trim();
+    if (!name || name === cur) return;
+    btn.disabled = true; btn.textContent = 'Đang lưu…';
+    try {
+      const next = { ...titles, [c.name]: name };
+      const sha = await commit({ adds: [titlesAdd(next)] }, 'Đổi tên khoá học: ' + c.name + ' → ' + name);
+      titles = next;
+      renderCourses();
+      toast('Đã đổi tên. Web sẽ cập nhật sau khoảng 1 phút.');
+      watchDeploy(sha);
+    } catch (e) {
+      alert('Không đổi tên được: ' + e.message);
+      btn.disabled = false; btn.textContent = '✏️ Đổi tên';
     }
   }
   async function loadCatalog() {
@@ -199,7 +238,7 @@
       const li = document.createElement('li');
       const box = document.createElement('div'); box.className = 'info';
       const t = document.createElement('div'); t.className = 't';
-      t.textContent = info ? info.title : stem(c.name);
+      t.textContent = courseTitle(c.name);
       const s = document.createElement('div'); s.className = 's';
       s.textContent = (c.type === 'dir' ? '📁 ' : '') + c.name + (c.size ? ' · ' + fmtSize(c.size) : '') +
         (info ? ' · ' + info.lessons + ' bài · SCORM ' + info.version : ' · đang cập nhật lên web…');
@@ -212,16 +251,19 @@
         const link = courseLink(c.name);
         try { await navigator.clipboard.writeText(link); toast('Đã sao chép: ' + link); } catch (_) { prompt('Sao chép link:', link); }
       };
+      const ren = document.createElement('button');
+      ren.className = 'btn small'; ren.textContent = '✏️ Đổi tên';
+      ren.onclick = () => renameCourse(c, ren);
       const del = document.createElement('button');
       del.className = 'btn small danger'; del.textContent = 'Xoá';
       del.onclick = () => removeCourse(c, del);
-      li.append(box, open, copy, del);
+      li.append(box, ren, open, copy, del);
       ul.appendChild(li);
     }
   }
 
   async function removeCourse(c, btn) {
-    const title = (catalog.find((x) => x.source === c.name) || {}).title || c.name;
+    const title = courseTitle(c.name);
     if (!confirm(`Xoá khoá học "${title}"?\n\nNgười học sẽ không mở được khoá này nữa.`)) return;
     btn.disabled = true; btn.textContent = 'Đang xoá…';
     try {
@@ -232,7 +274,10 @@
         const tree = await gh(R() + '/git/trees/' + head.tree.sha + '?recursive=1');
         paths = tree.tree.filter((x) => x.type === 'blob' && x.path.startsWith('courses/' + c.name + '/')).map((x) => x.path);
       }
-      const sha = await commit({ deletes: paths }, 'Xoá khoá học: ' + c.name);
+      let next = null;
+      if (titles[c.name] != null) { next = { ...titles }; delete next[c.name]; }
+      const sha = await commit({ deletes: paths, adds: next ? [titlesAdd(next)] : [] }, 'Xoá khoá học: ' + c.name);
+      if (next) titles = next;
       courses = courses.filter((x) => x !== c);
       renderCourses();
       toast('Đã xoá. Web sẽ cập nhật sau khoảng 1 phút.');
@@ -245,7 +290,7 @@
 
   // ---------- Thêm khoá học ----------
   async function inspectZip(file) {
-    const p = { file, name: file.name.replace(/[\\/]/g, '-'), title: '', error: '' };
+    const p = { file, name: file.name.replace(/[\\/]/g, '-'), title: '', manifestTitle: '', error: '' };
     if (!/\.zip$/i.test(file.name)) { p.error = 'Không phải file .zip'; return p; }
     if (file.size > MAX_TOTAL_MB * 1048576) { p.error = `File quá lớn (${fmtSize(file.size)}). Tối đa ${MAX_TOTAL_MB} MB — hãy giảm dung lượng khi xuất bài giảng.`; return p; }
     try {
@@ -256,7 +301,8 @@
       const doc = new DOMParser().parseFromString(await zip.files[mPath].async('string'), 'application/xml');
       const orgs = doc.getElementsByTagNameNS('*', 'organization');
       const t = orgs[0] && Array.from(orgs[0].children).find((x) => x.localName === 'title');
-      p.title = t ? t.textContent.trim() : '';
+      p.manifestTitle = t ? t.textContent.trim() : '';
+      p.title = p.manifestTitle || stem(file.name);
     } catch (e) {
       p.error = 'File zip bị hỏng hoặc không đúng định dạng.';
     }
@@ -285,6 +331,13 @@
         box.appendChild(e);
       } else {
         const s = document.createElement('div'); s.className = 's';
+        const tl = document.createElement('label');
+        tl.textContent = 'Tên khoá học (hiển thị cho người học, đổi được bất cứ lúc nào):';
+        const tin = document.createElement('input');
+        tin.className = 'title-input';
+        tin.value = p.title;
+        tin.oninput = () => { p.title = tin.value; t.textContent = tin.value.trim() || p.file.name; };
+        tl.appendChild(tin);
         const lbl = document.createElement('label');
         lbl.textContent = 'Tên file (quyết định đường link, nên đặt ngắn gọn và không đổi về sau):';
         const inp = document.createElement('input');
@@ -300,7 +353,7 @@
         const nParts = Math.ceil(p.file.size / (PART_MB * 1048576));
         s.textContent = fmtSize(p.file.size) + (nParts > 1 ? ` · file lớn, sẽ tự chia thành ${nParts} phần khi tải lên` : '');
         lbl.appendChild(inp);
-        box.append(s, lbl, linkPrev);
+        box.append(s, tl, lbl, linkPrev);
       }
       const rm = document.createElement('button');
       rm.className = 'btn small'; rm.textContent = 'Bỏ';
@@ -334,6 +387,14 @@
           });
         }
       }
+      // Lưu tên khoá học tự đặt (chỉ khi khác tên trong imsmanifest.xml)
+      const next = { ...titles };
+      for (const p of ok) {
+        const want = (p.title || '').trim();
+        if (want && want !== p.manifestTitle) next[p.name] = want; else delete next[p.name];
+      }
+      const titlesChanged = JSON.stringify(next) !== JSON.stringify(titles);
+      if (titlesChanged) adds.push(titlesAdd(next));
       // Thay thế khoá trùng tên: xoá các file cũ của khoá đó (trừ file sắp ghi đè)
       const newPaths = new Set(adds.map((a) => a.path));
       const deletes = [];
@@ -349,6 +410,7 @@
       st.textContent = '✓ Đã tải lên ' + ok.length + ' khoá học. Web sẽ cập nhật sau khoảng 1–2 phút.';
       pending = []; renderPending();
       await refreshCourses().catch(() => {});
+      titles = next; // GitHub có thể trả dữ liệu cũ vài giây, dùng bản vừa lưu
       for (const p of ok) if (!courses.some((c) => c.name === p.name)) courses.push({ name: p.name, type: 'file', size: p.file.size, paths: [] });
       renderCourses();
       watchDeploy(sha);
