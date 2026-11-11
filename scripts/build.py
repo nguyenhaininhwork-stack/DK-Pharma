@@ -106,6 +106,15 @@ def main():
         elif p.is_dir():
             sources[p.name] = ("dir", p)
 
+    # Tên khoá học tự đặt trên trang quản trị (ưu tiên hơn tên trong imsmanifest.xml)
+    titles = {}
+    titles_file = SRC_COURSES / "_titles.json"
+    if titles_file.exists():
+        try:
+            titles = json.loads(titles_file.read_text(encoding="utf-8")) or {}
+        except Exception as e:  # noqa: BLE001
+            print(f"! _titles.json bị lỗi, bỏ qua: {e}")
+
     catalog, used = [], set()
     tmp_zip = ROOT / "_joined.zip"
     for name in sorted(sources, key=str.lower):
@@ -135,6 +144,9 @@ def main():
             if not manifest:
                 raise ValueError("không có imsmanifest.xml — không phải gói SCORM")
             title, version, lessons = read_manifest(manifest.read_bytes())
+            custom = str(titles.get(name) or "").strip()
+            if custom:
+                title = custom
         except Exception as e:  # noqa: BLE001
             print(f"  ! LỖI, bỏ qua gói này: {e}")
             shutil.rmtree(dest, ignore_errors=True)
